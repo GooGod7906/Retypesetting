@@ -32,6 +32,7 @@ export interface ParagraphSettings {
   lineSpacing: number;      // 行距倍数
   paragraphSpacing: number; // 段间距 mm
   firstLineIndent: number;  // 首行缩进 mm
+  centered?: boolean;       // 段落是否居中
 }
 
 export interface TableStyleSettings {
