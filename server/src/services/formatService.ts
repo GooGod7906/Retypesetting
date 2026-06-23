@@ -626,10 +626,10 @@ function createTextRun(text: string, settings: FontSettings, addBreakBefore = fa
 
 /**
  * 将段落文本按选项标记分割，在每个选项前插入换行。
- * 匹配 A-G 的 A. / A、/ A）等常见格式，不要求前面有空格。
+ * 仅匹配大写 A-G 的 A. / A、/ A）等常见格式，小写 a-g 不触发换行。
  */
 function splitAtOptionA(text: string): string[] {
-  const regex = /([A-Ga-g][.、）)])/g;
+  const regex = /([A-G][.、）)])/g;
   const parts: string[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -646,8 +646,8 @@ function splitAtOptionA(text: string): string[] {
   return parts.filter(Boolean);
 }
 
-// 匹配选项标记：A. A、A）A) 等，不要求前面有空格
-const OPTION_MARKER_RE = /([A-Ga-g][.、）)])/;
+// 匹配选项标记：A. A、A）A) 等，仅大写 A-G，不要求前面有空格
+const OPTION_MARKER_RE = /([A-G][.、）)])/;
 
 /**
  * 从段落中分离题干和选项。
@@ -664,7 +664,7 @@ function extractOptions(text: string): { question: string; options: string[] } {
   const parts = rest.split(OPTION_MARKER_RE).filter(Boolean);
   const options: string[] = [];
   for (let i = 0; i < parts.length; i++) {
-    if (/^[A-Ga-g][.、）)]$/.test(parts[i])) {
+    if (/^[A-G][.、）)]$/.test(parts[i])) {
       // 选项标记，下一个元素是内容
       const content = (i + 1 < parts.length) ? parts[i + 1].trim() : '';
       options.push(parts[i] + content);
