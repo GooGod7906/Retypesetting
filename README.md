@@ -77,6 +77,59 @@ npm run dev
 
 前端运行在 `http://localhost:5173`，后端运行在 `http://localhost:3000`。
 
+### 生产构建
+
+```bash
+# 1. 构建前端
+cd web && npm run build
+
+# 2. 构建后端
+cd ../server && npm run build
+
+# 3. 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入 MINERU_API_TOKEN
+```
+
+### 部署方式一：直接启动
+
+```bash
+cd server && npm start
+```
+
+访问 `http://localhost:3000`，后端自动托管前端构建产物并处理 `/api/*` 请求。
+
+### 部署方式二：Nginx 反向代理
+
+将 `web/dist/` 目录内容复制到 nginx 静态目录，然后配置 nginx：
+
+```nginx
+server {
+    listen 80;
+    server_name your_domain;
+
+    # 前端静态文件（修改为实际路径）
+    root /var/www/html;
+    index index.html;
+
+    # 前端页面（子路径部署时需要 try_files）
+    location /retypesetting/ {
+        try_files $uri $uri/ /retypesetting/index.html;
+    }
+
+    # API 反向代理
+    location /retypesetting/api/ {
+        proxy_pass http://127.0.0.1:3003/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        client_max_body_size 200m;
+    }
+}
+```
+
+> **注意：** 子路径部署时需确保 `vite.config.ts` 中 `base` 与 nginx 路径一致（如 `base: '/retypesetting/'`），构建前端后将 `web/dist/` 内容复制到 nginx 对应目录。
+
 ## API 接口
 
 | 方法 | 路径 | 说明 |
