@@ -1,0 +1,16 @@
+{
+  "name": "pdf-typesetting",
+  "version": "1.0.0",
+  "description": "扫描件重排版 Web 应用",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:web": "cd web && npm run dev",
+    "build": "cd web && npm run build",
+    "install:all": "cd web && npm install && cd ../server && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

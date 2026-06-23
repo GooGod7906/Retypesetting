@@ -1,0 +1,111 @@
+[
+  {
+    "id": "preset-standard",
+    "name": "标准试卷模板",
+    "description": "标准自定义排版模板",
+    "isPreset": true,
+    "pageSettings": {
+      "pageSize": "A4",
+      "orientation": "portrait",
+      "margins": {
+        "top": 18,
+        "bottom": 20,
+        "left": 20,
+        "right": 18
+      },
+      "maxPages": 16
+    },
+    "paragraphSettings": {
+      "lineSpacing": 1.25,
+      "paragraphSpacing": 3,
+      "firstLineIndent": 0,
+      "centered": true
+    },
+    "fonts": {
+      "body": {
+        "chineseFont": "SimHei",
+        "englishFont": "Times New Roman",
+        "numberFont": "Times New Roman",
+        "fontSize": 10.5,
+        "color": "#000000",
+        "letterSpacing": 0,
+        "lineSpacing": 1.5
+      },
+      "headings": {
+        "level1": {
+          "fontSize": 18,
+          "bold": true,
+          "color": "#000000",
+          "letterSpacing": 0,
+          "lineSpacing": 1.25,
+          "centered": true,
+          "chineseFont": "SimSun"
+        },
+        "level2": {
+          "fontSize": 12,
+          "bold": true,
+          "color": "#000000",
+          "letterSpacing": 0,
+          "lineSpacing": 1.25,
+          "centered": false
+        },
+        "level3": {
+          "fontSize": 14,
+          "bold": true,
+          "color": "#000000",
+          "letterSpacing": 0,
+          "lineSpacing": 1.25
+        },
+        "level4": {
+          "fontSize": 12,
+          "bold": true,
+          "color": "#000000",
+          "letterSpacing": 0,
+          "lineSpacing": 1.25
+        }
+      },
+      "special": {
+        "questionNumber": {
+          "fontSize": 12,
+          "bold": true,
+          "color": "#000000"
+        },
+        "option": {
+          "fontSize": 12,
+          "color": "#000000"
+        },
+        "formula": {
+          "fontSize": 12,
+          "color": "#000000"
+        },
+        "tableHeader": {
+          "fontSize": 11,
+          "bold": true,
+          "color": "#000000"
+        }
+      },
+      "footer": {
+        "show": true,
+        "font": "SimSun",
+        "fontSize": 9,
+        "centered": true,
+        "footerFormat": "-第{current}页 共{total}页-"
+      }
+    },
+    "styles": {
+      "questionNumberFormat": "1.",
+      "showQuestionPoints": true,
+      "imagePosition": "inline",
+      "tableStyle": {
+        "borderWidth": 0.5,
+        "borderColor": "#000000",
+        "headerBgColor": "#F2F2F2",
+        "cellPadding": 2
+      },
+      "optionLayout": "even"
+    },
+    "formulaSettings": {
+      "format": "omml"
+    }
+  }
+]
