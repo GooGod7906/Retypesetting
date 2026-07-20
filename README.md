@@ -71,6 +71,11 @@ MINERU_API_TOKEN=your_api_token_here
 
 ### 启动开发服务器
 
+**一键静默启动（推荐）：** 直接双击项目根目录的 `start-dev.pyw`，即可无黑窗口地同时启动前后端，并在约 10 秒后自动打开浏览器 `http://localhost:3000`。（需本机已安装 Python，`.pyw` 默认由 `pythonw.exe` 运行；如双击仍弹黑窗口，改用 `pythonw.exe start-dev.pyw` 启动。）
+
+
+**手动启动：**
+
 ```bash
 npm run dev
 ```
