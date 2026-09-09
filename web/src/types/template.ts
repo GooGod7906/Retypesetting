@@ -41,8 +41,20 @@ export interface TableStyleSettings {
   cellPadding: number;
 }
 
+/**
+ * 公式渲染方式（界面只提供 omml / latex 两种）。
+ * 旧模板中保存的 'equation'（等同 omml）、'mathtype'（等同 latex）、'image' 仍可读取，
+ * 由后端与编辑器自动归一化，避免历史模板失效。
+ */
+export type FormulaFormat = 'omml' | 'latex' | 'equation' | 'mathtype' | 'image';
+
 export interface TemplateFormulaSettings {
-  format: 'omml' | 'image' | 'latex';
+  format: FormulaFormat;
+}
+
+/** 将历史公式渲染配置归一化为当前支持的两种模式 */
+export function normalizeFormulaFormat(format?: string): 'omml' | 'latex' {
+  return format === 'latex' || format === 'mathtype' ? 'latex' : 'omml';
 }
 
 export interface FooterSettings {

@@ -3,6 +3,10 @@ node_modules/
 .pnp
 .pnp.js
 
+# MinerU API doc (reference only)
+MinerU 文档解析接口文档.html
+MinerU 文档解析接口文档_files/
+
 # Build output
 dist/
 build/

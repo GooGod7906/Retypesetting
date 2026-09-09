@@ -14,8 +14,10 @@ import {
   PageOrientation,
   Footer,
   PageNumber,
+  Math as MathEq,
 } from 'docx';
 import fs from 'fs';
+import { latexToOmml, UnsupportedLatexError } from './latexToOmml';
 import path from 'path';
 import https from 'https';
 import http from 'http';
@@ -35,6 +37,31 @@ interface ContentBlock {
   rows?: TableCellData[][];
   imageUrl?: string;
   imageData?: Buffer;
+}
+
+/**
+ * 实际生效的公式渲染模式。
+ * 旧模板中保存的 'equation' / 'image' 归一化为 'omml'，
+ * 'mathtype' 归一化为 'latex'，保证历史模板仍能正常生成。
+ */
+export type FormulaRenderMode = 'omml' | 'latex';
+
+/**
+ * 将模板中的公式渲染配置归一化为两种实际渲染模式：
+ * - omml：生成 Word 原生公式对象（OMML），打开即可编辑（旧值 equation / image）
+ * - latex：原样输出 LaTeX 源码（旧值 mathtype，可在 Word 中配合 MathType 的 Alt+\ 转换）
+ */
+export function normalizeFormulaFormat(format?: string): FormulaRenderMode {
+  switch (format) {
+    case 'latex':
+    case 'mathtype':
+      return 'latex';
+    case 'omml':
+    case 'equation':
+    case 'image':
+    default:
+      return 'omml';
+  }
 }
 
 /**
@@ -234,161 +261,12 @@ function parseHtmlTable(html: string): TableCellData[][] {
 }
 
 /**
- * 将 LaTeX 公式转为可读文本（供行内公式和独立公式共用）
- */
-function convertFormulaToText(formula: string): string {
-  return formula
-    // 结构类（带花括号参数）
-    .replace(/\\boxed\s*\{([^}]*)\}/g, '[$1]')
-    .replace(/\\xrightarrow\s*\{([^}]*)\}/g, '→($1)')
-    .replace(/\\xleftarrow\s*\{([^}]*)\}/g, '←($1)')
-    .replace(/\\xleftrightarrow\s*\{([^}]*)\}/g, '↔($1)')
-    .replace(/\\overrightarrow\s*\{([^}]*)\}/g, '→($1)')
-    .replace(/\\overleftarrow\s*\{([^}]*)\}/g, '←($1)')
-    .replace(/\\overline\s*\{([^}]*)\}/g, '‾($1)')
-    .replace(/\\underline\s*\{([^}]*)\}/g, '_($1)')
-    .replace(/\\hat\s*\{([^}]*)\}/g, '^($1)')
-    .replace(/\\vec\s*\{([^}]*)\}/g, '→($1)')
-    .replace(/\\dot\s*\{([^}]*)\}/g, '·($1)')
-    .replace(/\\ddot\s*\{([^}]*)\}/g, '··($1)')
-    .replace(/\\tilde\s*\{([^}]*)\}/g, '~($1)')
-    .replace(/\\widetilde\s*\{([^}]*)\}/g, '~($1)')
-    .replace(/\\widehat\s*\{([^}]*)\}/g, '^($1)')
-    // OCR 丢失花括号的变体：\boxed\text内容、\xrightarrow① 等
-    .replace(/\\boxed\s*\\text\s*([^\s\\{]+)/g, '[$1]')
-    .replace(/\\xrightarrow\s*([①②③④⑤⑥⑦⑧⑨⑩])/g, '→$1')
-    .replace(/\\xleftarrow\s*([①②③④⑤⑥⑦⑧⑨⑩])/g, '←$1')
-    // 文本/字体类 — 保留内容
-    .replace(/\\text\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\mathrm\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\textbf\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\textit\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\mathbf\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\mathit\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\mathcal\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\mathbb\s*\{([^}]*)\}/g, (_, content) => {
-      const bb: Record<string, string> = {
-        'R': 'ℝ', 'N': 'ℕ', 'Z': 'ℤ', 'Q': 'ℚ', 'C': 'ℂ', 'P': 'ℙ',
-      };
-      return content.split('').map((c: string) => bb[c] || c).join('');
-    })
-    .replace(/\\mathfrak\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\boldsymbol\s*\{([^}]*)\}/g, '$1')
-    .replace(/\\bm\s*\{([^}]*)\}/g, '$1')
-    // \text 无花括号（OCR 丢失）：\text果汁 → 果汁
-    .replace(/\\text\s+([^\s\\{}]+)/g, '$1')
-    .replace(/\\mathrm\s+([^\s\\{}]+)/g, '$1')
-    // 分数/根号
-    .replace(/\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, '($1)/($2)')
-    .replace(/\\dfrac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, '($1)/($2)')
-    .replace(/\\cfrac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, '($1)/($2)')
-    .replace(/\\sqrt\s*\{([^}]*)\}/g, '√($1)')
-    .replace(/\\sqrt\s*\[([^\]]*)\]\s*\{([^}]*)\}/g, '$1√($2)')
-    // 大型运算符
-    .replace(/\\sum(?=\s|[_^\\{]|$)/g, 'Σ')
-    .replace(/\\prod(?=\s|[_^\\{]|$)/g, 'Π')
-    .replace(/\\int(?=\s|[_^\\{]|$)/g, '∫')
-    .replace(/\\iint(?=\s|[_^\\{]|$)/g, '∬')
-    .replace(/\\oint(?=\s|[_^\\{]|$)/g, '∮')
-    .replace(/\\lim(?=\s|[_^\\{]|$)/g, 'lim')
-    .replace(/\\infty/g, '∞')
-    .replace(/\\partial/g, '∂')
-    .replace(/\\nabla/g, '∇')
-    // 箭头
-    .replace(/\\rightarrow|\\to(?=\s|[^a-zA-Z]|$)/g, '→')
-    .replace(/\\leftarrow/g, '←')
-    .replace(/\\leftrightarrow/g, '↔')
-    .replace(/\\Rightarrow/g, '⇒')
-    .replace(/\\Leftarrow/g, '⇐')
-    .replace(/\\Leftrightarrow/g, '⇔')
-    .replace(/\\uparrow/g, '↑')
-    .replace(/\\downarrow/g, '↓')
-    // 三角/对数函数
-    .replace(/\\(sin|cos|tan|cot|sec|csc|log|ln|lim|max|min|exp|sup|inf)\b/g, '$1')
-    .replace(/\\(arcsin|arccos|arctan)\b/g, '$1')
-    // 上下标
-    .replace(/\^(\{[^}]*\}|[a-zA-Z0-9])/g, (_, exp) => {
-      const e = exp.replace(/[{}]/g, '');
-      return `^${e}`;
-    })
-    .replace(/_(\{[^}]*\}|[a-zA-Z0-9])/g, (_, sub) => {
-      const s = sub.replace(/[{}]/g, '');
-      return `_${s}`;
-    })
-    // 换行和空格
-    .replace(/\\\\/g, '')
-    .replace(/\\[,;!\s]/g, ' ')
-    .replace(/\\(quad|qquad|enspace|thinspace)/g, '  ')
-    // 运算符
-    .replace(/\\(cdot|times|div|pm|mp|ast|star|circ|bullet|oplus|otimes)/g, (m) => {
-      const ops: Record<string, string> = {
-        '\\cdot': '·', '\\times': '×', '\\div': '÷', '\\pm': '±', '\\mp': '∓',
-        '\\ast': '∗', '\\star': '⋆', '\\circ': '∘', '\\bullet': '•',
-        '\\oplus': '⊕', '\\otimes': '⊗',
-      };
-      return ops[m] || m;
-    })
-    // 关系符
-    .replace(/\\(leq|geq|neq|approx|equiv|sim|simeq|cong|propto|ll|gg|subset|supset|subseteq|supseteq|in|notin|perp|parallel)/g, (m) => {
-      const syms: Record<string, string> = {
-        '\\leq': '≤', '\\geq': '≥', '\\neq': '≠', '\\approx': '≈',
-        '\\equiv': '≡', '\\sim': '∼', '\\simeq': '≃', '\\cong': '≅',
-        '\\propto': '∝', '\\ll': '≪', '\\gg': '≫',
-        '\\subset': '⊂', '\\supset': '⊃', '\\subseteq': '⊆', '\\supseteq': '⊇',
-        '\\in': '∈', '\\notin': '∉', '\\perp': '⊥', '\\parallel': '∥',
-      };
-      return syms[m] || m;
-    })
-    // 希腊字母
-    .replace(/\\(alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)/g, (m) => {
-      const greek: Record<string, string> = {
-        '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ',
-        '\\epsilon': 'ε', '\\varepsilon': 'ε', '\\zeta': 'ζ', '\\eta': 'η',
-        '\\theta': 'θ', '\\vartheta': 'ϑ', '\\iota': 'ι', '\\kappa': 'κ',
-        '\\lambda': 'λ', '\\mu': 'μ', '\\nu': 'ν', '\\xi': 'ξ',
-        '\\pi': 'π', '\\rho': 'ρ', '\\sigma': 'σ', '\\tau': 'τ',
-        '\\upsilon': 'υ', '\\phi': 'φ', '\\varphi': 'φ', '\\chi': 'χ',
-        '\\psi': 'ψ', '\\omega': 'ω',
-        '\\Gamma': 'Γ', '\\Delta': 'Δ', '\\Theta': 'Θ', '\\Lambda': 'Λ',
-        '\\Xi': 'Ξ', '\\Pi': 'Π', '\\Sigma': 'Σ', '\\Upsilon': 'Υ',
-        '\\Phi': 'Φ', '\\Psi': 'Ψ', '\\Omega': 'Ω',
-      };
-      return greek[m] || m;
-    })
-    // 集合/逻辑
-    .replace(/\\(emptyset|cap|cup|setminus|complement|forall|exists|neg|land|lor)/g, (m) => {
-      const syms: Record<string, string> = {
-        '\\emptyset': '∅', '\\cap': '∩', '\\cup': '∪', '\\setminus': '∖',
-        '\\complement': '∁', '\\forall': '∀', '\\exists': '∃',
-        '\\neg': '¬', '\\land': '∧', '\\lor': '∨',
-      };
-      return syms[m] || m;
-    })
-    // 杂项符号
-    .replace(/\\(angle|triangle|degree|prime|dagger|ell|hbar|Im|Re|aleph)/g, (m) => {
-      const syms: Record<string, string> = {
-        '\\angle': '∠', '\\triangle': '△', '\\degree': '°', '\\prime': '′',
-        '\\dagger': '†', '\\ell': 'ℓ', '\\hbar': 'ℏ', '\\Im': 'ℑ', '\\Re': 'ℜ', '\\aleph': 'ℵ',
-      };
-      return syms[m] || m;
-    })
-    // 括号修饰
-    .replace(/\\left\s*([([{|])/g, '$1')
-    .replace(/\\right\s*([)\]}|])/g, '$1')
-    // 环境标记
-    .replace(/\\begin\s*\{[^}]*\}/g, '')
-    .replace(/\\end\s*\{[^}]*\}/g, '')
-    // 其余未知命令：去掉反斜杠，保留命令名
-    .replace(/\\([a-zA-Z]+)/g, '$1')
-    // 最后移除剩余花括号
-    .replace(/[{}]/g, '')
-    .trim();
-}
-
-/**
  * 解析 Markdown 内容为结构化块
  */
-async function parseMarkdownToBlocks(markdown: string, imagesDir?: string): Promise<ContentBlock[]> {
+async function parseMarkdownToBlocks(
+  markdown: string,
+  imagesDir?: string
+): Promise<ContentBlock[]> {
   const lines = markdown.split('\n');
   const blocks: ContentBlock[] = [];
   let currentParagraph = '';
@@ -547,31 +425,8 @@ async function parseMarkdownToBlocks(markdown: string, imagesDir?: string): Prom
       continue;
     }
 
-    // 行内公式 $...$ （非 $$）— 转为可读文本保留在段落内
-    if (line.includes('$') && !line.startsWith('$$')) {
-      const inlineFormulaRe = /\$([^$\n]+)\$/g;
-      let inlineMatch: RegExpExecArray | null;
-      let lastEnd = 0;
-      let hasInline = false;
-      let convertedLine = '';
-      while ((inlineMatch = inlineFormulaRe.exec(line)) !== null) {
-        hasInline = true;
-        const before = line.slice(lastEnd, inlineMatch.index);
-        convertedLine += before;
-        // 将行内公式转为可读文本，保留在段落中
-        convertedLine += convertFormulaToText(inlineMatch[1]);
-        lastEnd = inlineMatch.index + inlineMatch[0].length;
-      }
-      if (hasInline) {
-        convertedLine += line.slice(lastEnd);
-        // 替换当前行，继续作为普通段落累积
-        lines[i] = convertedLine.trim();
-        i--; // 回退一行重新处理
-        continue;
-      }
-    }
-
-    // 空行 = 段落结束
+    // 行内公式 $...$ 原样保留在段落文本中，
+    // 由生成阶段按公式渲染模式处理（omml → 原生公式对象，latex → 保留源码）
     if (line === '') {
       flushParagraph();
       continue;
@@ -606,6 +461,76 @@ async function parseMarkdownToBlocks(markdown: string, imagesDir?: string): Prom
  */
 function createTextRuns(text: string, settings: FontSettings, addBreak = false): TextRun[] {
   return parseInlineSegments(text, settings, addBreak);
+}
+
+/**
+ * latex 模式：渲染包含行内 $...$ 公式的文本。
+ * 公式部分保留原始 LaTeX 源码（不被解析为上标/下标），其余文本正常处理。
+ */
+function renderInlineLatex(text: string, settings: FontSettings, addBreak = false): TextRun[] {
+  const re = /\$([^$\n]+)\$/g;
+  const runs: TextRun[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let first = true;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) {
+      runs.push(...createTextRuns(text.slice(last, m.index), settings, first && addBreak));
+      first = false;
+    }
+    runs.push(
+      new TextRun({
+        text: m[0], // 原始 $...$ 源码
+        font: settings.chineseFont || settings.englishFont || 'SimSun',
+        size: settings.fontSize * 2,
+      })
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) {
+    runs.push(...createTextRuns(text.slice(last), settings, first && addBreak));
+  }
+  if (runs.length === 0) {
+    runs.push(...createTextRuns(text, settings, addBreak));
+  }
+  return runs;
+}
+
+/**
+ * omml 模式：将文本中的行内 $...$ 公式解析为 Word 原生公式对象（OMML），
+ * 其余文本正常处理。遇到不支持的构造时回退为原始 $...$ 文本（仍可在 Word 中用 Alt+\ 转换）。
+ */
+function renderInlineEquation(text: string, settings: FontSettings, addBreak = false): (TextRun | MathEq)[] {
+  const re = /\$([^$\n]+)\$/g;
+  const out: (TextRun | MathEq)[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let first = true;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) {
+      out.push(...createTextRuns(text.slice(last, m.index), settings, first && addBreak));
+      first = false;
+    }
+    try {
+      const parsed = latexToOmml(m[1].trim());
+      out.push(new MathEq({ children: parsed }));
+    } catch (e) {
+      if (e instanceof UnsupportedLatexError) {
+        // 回退：保留原始 $...$，便于手动 Alt+\ 转换
+        out.push(new TextRun({
+          text: m[0],
+          font: settings.chineseFont || settings.englishFont || 'SimSun',
+          size: settings.fontSize * 2,
+        }));
+      } else {
+        throw e;
+      }
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(...createTextRuns(text.slice(last), settings, first && addBreak));
+  if (out.length === 0) out.push(...createTextRuns(text, settings, addBreak));
+  return out;
 }
 
 /**
@@ -757,10 +682,20 @@ export async function generateDocx(
   outputDir: string,
   imagesDir?: string
 ): Promise<string> {
+  // 公式渲染模式（旧值 equation/mathtype/image 会归一化到 omml/latex）
+  const formulaFormat = normalizeFormulaFormat(template.formulaSettings?.format);
+  const useOmml = formulaFormat === 'omml';
   const blocks = await parseMarkdownToBlocks(markdown, imagesDir);
   const { fonts, paragraphSettings, pageSettings, styles } = template;
 
   const children: (Paragraph | Table)[] = [];
+
+  // omml 模式：行内公式解析为 Word 原生公式对象（OMML）；
+  // latex 模式：行内公式以原始 LaTeX（$...$）输出，便于 Word + MathType 的 Alt+\ 一键转换
+  const buildRuns = (text: string, settings: FontSettings, addBreak = false): (TextRun | MathEq)[] => {
+    if (useOmml) return renderInlineEquation(text, settings, addBreak);
+    return renderInlineLatex(text, settings, addBreak);
+  };
 
   for (const block of blocks) {
     switch (block.type) {
@@ -828,7 +763,7 @@ export async function generateDocx(
           for (const line of lines) {
             children.push(
               new Paragraph({
-                children: createTextRuns(line, bodyFont),
+                children: buildRuns(line, bodyFont),
                 alignment: fonts.body.centered ? AlignmentType.CENTER : AlignmentType.LEFT,
                 spacing: {
                   line: paragraphSettings.lineSpacing * 240,
@@ -842,12 +777,12 @@ export async function generateDocx(
         } else {
           // 默认模式（或无选项时）：在选项前插入换行
           const segments = hasOptions ? splitAtOptionA(block.content) : [block.content];
-          const runs: TextRun[] = [];
+          const runs: (TextRun | MathEq)[] = [];
           segments
             .filter((seg) => seg.length > 0)
             .forEach((seg, idx) => {
               // 第一段不需要 break，后续段落需要
-              const segRuns = createTextRuns(seg, bodyFont, idx > 0);
+              const segRuns = buildRuns(seg, bodyFont, idx > 0);
               runs.push(...segRuns);
             });
           if (runs.length > 0) {
@@ -890,21 +825,21 @@ export async function generateDocx(
               const rs = cell.rowSpan || 1;
               const cs = cell.colSpan || 1;
               const isHeader = r === 0;
+              // 表格单元格内的公式同样按公式渲染模式处理（omml → 原生公式；latex → 保留源码）
+              const cellFont: FontSettings = {
+                chineseFont: isHeader
+                  ? fonts.special.tableHeader.chineseFont || fonts.body.chineseFont
+                  : fonts.body.chineseFont,
+                englishFont: fonts.body.englishFont,
+                fontSize: isHeader
+                  ? fonts.special.tableHeader.fontSize
+                  : fonts.body.fontSize,
+                bold: isHeader ? true : undefined,
+              };
               const cellProps: any = {
                 children: [
                   new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: cell.text,
-                        font: isHeader
-                          ? fonts.special.tableHeader.chineseFont || fonts.body.chineseFont
-                          : fonts.body.chineseFont,
-                        size: isHeader
-                          ? fonts.special.tableHeader.fontSize * 2
-                          : fonts.body.fontSize * 2,
-                        bold: isHeader ? true : undefined,
-                      }),
-                    ],
+                    children: buildRuns(cell.text, cellFont),
                     alignment: isHeader ? AlignmentType.CENTER : undefined,
                   }),
                 ],
@@ -965,21 +900,50 @@ export async function generateDocx(
         } else if (formulaText.startsWith('$') && formulaText.endsWith('$')) {
           formulaText = formulaText.slice(1, -1).trim();
         }
-        formulaText = convertFormulaToText(formulaText);
-        children.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: formulaText,
-                font: 'Cambria Math',
-                size: fonts.special.formula.fontSize * 2,
-                italics: true,
-              }),
-            ],
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 120, after: 120 },
-          })
-        );
+
+        // 以 $$...$$ 原样输出 LaTeX 源码（latex 模式；omml 模式遇到不支持构造时同样回退到这里）
+        const pushLatexSource = () => {
+          children.push(
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `$$${formulaText}$$`,
+                  font: 'Cambria Math',
+                  size: fonts.special.formula.fontSize * 2,
+                }),
+              ],
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 120, after: 120 },
+            })
+          );
+        };
+
+        if (formulaFormat === 'latex') {
+          // LaTeX 源码模式：原样保留 LaTeX 源码（$$...$$），
+          // 在 Word 中全选后按 MathType 的 Alt+\ 即可转为可编辑公式。
+          pushLatexSource();
+          break;
+        }
+
+        // omml 模式：解析为 Word 原生公式对象（OMML），打开即可编辑。
+        try {
+          const parsed = latexToOmml(formulaText);
+          children.push(
+            new Paragraph({
+              children: [new MathEq({ children: parsed })],
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 120, after: 120 },
+            })
+          );
+        } catch (e) {
+          if (e instanceof UnsupportedLatexError) {
+            // 不支持的构造（矩阵、多行对齐等）：回退为原始 LaTeX 源码，保证文档可正常生成且仍可转换
+            console.warn('[Format] 公式回退为 LaTeX 源码：', e.message);
+            pushLatexSource();
+          } else {
+            throw e;
+          }
+        }
         break;
       }
     }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FormatTemplate, FontSettings } from '../types/template';
+import { FormatTemplate, FontSettings, normalizeFormulaFormat } from '../types/template';
 import { FiChevronDown, FiChevronUp, FiDownload, FiSave, FiX } from 'react-icons/fi';
 
 interface CustomTemplateEditorProps {
@@ -505,14 +505,26 @@ export function CustomTemplateEditor({ initialTemplate, onSave, onExport, onCanc
       <Section title="公式渲染方式">
         <Field label="渲染方式">
           <Select
-            value={tpl.formulaSettings?.format ?? 'omml'}
-            onChange={(v) => setTpl((p) => ({ ...p, formulaSettings: { format: v as 'omml' | 'image' | 'latex' } }))}
+            value={normalizeFormulaFormat(tpl.formulaSettings?.format)}
+            onChange={(v) => setTpl((p) => ({ ...p, formulaSettings: { format: v as 'omml' | 'latex' } }))}
             options={[
-              { label: 'OMML (Word 原生)', value: 'omml' },
-              { label: '图片渲染', value: 'image' },
+              { label: 'OMML (Word 原生公式，可直接编辑)', value: 'omml' },
               { label: 'LaTeX 源码', value: 'latex' },
             ]}
           />
+          {normalizeFormulaFormat(tpl.formulaSettings?.format) === 'omml' && (
+            <p className="text-xs text-gray-400 ml-16">
+              公式在生成阶段直接写成 Word 原生公式对象（OMML），打开就是可编辑公式，MathType 也能直接编辑，无需再手动转换。
+              支持分式、上下标、根号、积分/求和、希腊字母、函数、定界符、矩阵/分段函数/对齐环境、重音与划线、标注箭头等常用写法；
+              极少数不支持的写法会回退为原始 LaTeX 源码（仍可在 Word 中用 Alt+\ 或 MathType 转换）。
+            </p>
+          )}
+          {normalizeFormulaFormat(tpl.formulaSettings?.format) === 'latex' && (
+            <p className="text-xs text-gray-400 ml-16">
+              公式以原始 LaTeX 源码输出（行内 $...$、独立公式 $$...$$）。生成后用 Word 打开，按 Ctrl+A 全选，
+              再按 MathType 的 Alt+\ 快捷键，即可把全文公式一键转成可编辑的 MathType 公式。
+            </p>
+          )}
         </Field>
       </Section>
     </div>

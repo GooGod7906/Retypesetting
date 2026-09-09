@@ -42,8 +42,17 @@ export interface TableStyleSettings {
   cellPadding: number;  // mm
 }
 
+/**
+ * 公式渲染方式。
+ * 实际生效的只有两种（归一化逻辑见 formatService.normalizeFormulaFormat）：
+ *  - 'omml'：生成 Word 原生公式对象（OMML），打开即可编辑；旧值 'equation' / 'image' 归一化到这里
+ *  - 'latex'：原样输出 LaTeX 源码（$...$ / $$...$$），可在 Word 中配合 MathType 的 Alt+\ 转换；旧值 'mathtype' 归一化到这里
+ * 旧值仍保留在类型中，仅为兼容历史模板数据。
+ */
+export type FormulaFormat = 'omml' | 'latex' | 'equation' | 'mathtype' | 'image';
+
 export interface TemplateFormulaSettings {
-  format: 'omml' | 'image' | 'latex';
+  format: FormulaFormat;
 }
 
 export interface FooterSettings {

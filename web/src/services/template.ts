@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { FormatTemplate } from '../types/template';
 
-const api = axios.create({ baseURL: '/api/templates' });
+const api = axios.create({ baseURL: './api/templates' });
 
 export async function getAllTemplates(): Promise<FormatTemplate[]> {
   const response = await api.get('/');

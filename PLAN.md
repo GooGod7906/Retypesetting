@@ -468,10 +468,10 @@ interface FormatResult {
 
 1. **DOCX 生成方式**: 使用 `docx` npm 库本地生成，在后端直接处理排版
 2. **用户认证**: 目前不需要，但架构设计预留扩展空间
-3. **数学公式处理**: 作为模板的可选项，支持三种方式：
-   - 转换为 Word 公式对象 (OMML)
-   - 转换为图片
-   - 保留 LaTeX 文本形式
+3. **数学公式处理**: 作为模板的可选项，实际支持两种渲染方式（其余为历史兼容值）：
+   - `omml`：生成 Word 原生公式对象（OMML），打开即编辑、MathType 也能直接编辑，无需手动转换（内置 LaTeX→OMML 转换器，覆盖分式/上下标/根号/积分求和/定界符/矩阵与对齐环境/重音划线/标注箭头等；极少数不支持的构造回退为原始 LaTeX 源码）
+   - `latex`：保留 LaTeX 文本形式（行内 `$...$`、独立公式 `$$...$$`），在 Word 中全选后按 MathType 的 `Alt+\` 即可一键转为可编辑的 MathType 公式
+   - 历史兼容：`equation`、`image` 归一化为 `omml`，`mathtype` 归一化为 `latex`（见 `server/src/services/formatService.ts` 的 `normalizeFormulaFormat`）
 
 ## docx 库集成方案
 
@@ -512,12 +512,14 @@ const createQuestionParagraph = (question: QuestionContent, template: FormatTemp
 
 ```typescript
 interface TemplateFormulaSettings {
-  format: 'omml' | 'image' | 'latex';
-  // omml: 使用 docx 库的 Math 组件
-  // image: 将公式渲染为 PNG 后嵌入
-  // latex: 保留 $$...$$ 格式的纯文本
+  format: 'omml' | 'latex' | 'equation' | 'mathtype' | 'image';
+  // omml: 使用 docx 库的 Math 组件生成 Word 原生公式（OMML），覆盖分式/上下标/根号/积分求和/定界符/矩阵/对齐环境/重音划线/标注箭头等，不支持的构造回退为 LaTeX 源码
+  // latex: 保留 $...$ / $$...$$ 格式的 LaTeX 源码，Word 中全选后按 MathType 的 Alt+\ 转可编辑公式
+  // 历史兼容：equation / image 归一化为 omml，mathtype 归一化为 latex
 }
 ```
+
+> 图片渲染（`image`）尚未实现：当前会归一化为 `omml`，界面上不再提供该选项。若后续需要真正的公式图片，需要引入 MathJax/TeX 渲染 + 图片处理依赖。
 
 ## 后端依赖更新
 

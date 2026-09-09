@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "nodemon --verbose --watch src --ext ts,json --delay 2 --exec tsx src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "check:formula": "tsx scripts/check-formula.ts",
+    "analyze:formula": "tsx scripts/analyze-formula.ts",
+    "render:md": "tsx scripts/render-md.ts",
+    "dump:docx": "tsx scripts/dump-paragraphs.ts"
   },
   "dependencies": {
     "axios": "^1.7.0",

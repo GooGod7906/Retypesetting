@@ -10,7 +10,7 @@ export function DownloadButton({ fileId, fileName }: DownloadButtonProps) {
 
   const handleDownload = () => {
     const link = document.createElement('a');
-    link.href = `/api/download/${fileId}`;
+    link.href = `./api/download/${fileId}`;
     link.download = fileName || 'output.docx';
     document.body.appendChild(link);
     link.click();
