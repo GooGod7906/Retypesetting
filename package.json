@@ -4,10 +4,16 @@
   "description": "扫描件重排版 Web 应用",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev": "npm run typesetting",
+    "dev:legacy": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "cd server && npm run dev",
     "dev:web": "cd web && npm run dev",
-    "build": "cd web && npm run build",
+    "mineru:lab": "npm --prefix server run mineru:lab",
+    "typesetting": "npm --prefix server run mineru:lab",
+    "start:typesetting": "npm --prefix server run start:typesetting",
+    "build": "npm --prefix server run build",
+    "build:legacy": "npm --prefix web run build",
+    "test": "npm --prefix server run test:word-layout",
     "install:all": "cd web && npm install && cd ../server && npm install"
   },
   "devDependencies": {

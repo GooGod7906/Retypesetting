@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>试卷重排版</title>
+  <link rel="stylesheet" href="/katex/katex.min.css">
+  <link rel="stylesheet" href="/static/workspace.css">
+  <script defer src="/katex/katex.min.js"></script>
+  <script defer src="/static/template-preview.js"></script>
+  <script defer src="/static/workspace.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="shell top-inner">
+      <a class="brand" href="/">试卷重排版</a>
+    </div>
+  </header>
+  <main class="shell app">
+    <nav class="desk-nav" aria-label="工作台视图">
+      <button type="button" class="quiet" data-view="library" aria-controls="library">试卷</button>
+      <button type="button" class="quiet" data-view="proof" aria-controls="workspace" disabled>预览</button>
+      <button type="button" class="quiet" id="manage-templates" data-view="templates" aria-controls="template-workspace" disabled>模板</button>
+      <button type="button" id="open-export" aria-controls="document-settings" aria-haspopup="dialog" hidden>导出与下载</button>
+    </nav>
+    <div class="desk" data-view="library">
+      <aside class="library" id="library" aria-label="试卷">
+        <form id="upload-form" class="upload-card">
+          <h2>上传试卷</h2>
+          <label for="pdf-files" class="sr-only">PDF 文件</label>
+          <input id="pdf-files" type="file" name="files" accept=".pdf,application/pdf" multiple required>
+          <label>识别方式
+            <select name="model">
+              <option value="pipeline">Pipeline · 原位排版</option>
+              <option value="vlm">VLM · 复杂内容</option>
+              <option value="both" selected>同时识别</option>
+            </select>
+          </label>
+          <button id="upload-button" disabled>开始识别</button>
+          <progress class="progress" id="upload-progress" aria-label="PDF 上传进度" hidden></progress>
+          <p class="muted" id="retention-note">PDF 将发送给 MinerU 识别。</p>
+          <p id="upload-status" class="status" role="status"></p>
+        </form>
+        <section class="history" aria-labelledby="history-heading">
+          <h2 id="history-heading">识别记录</h2>
+          <label class="sr-only" for="history-search">搜索文件名</label>
+          <div class="history-tools">
+            <input id="history-search" type="search" placeholder="搜索文件名">
+            <button class="quiet" type="button" id="refresh-history">刷新</button>
+          </div>
+          <div id="run-list" class="history-list" aria-label="共享识别记录"></div>
+          <div id="run-results" class="results" aria-live="polite"></div>
+          <div class="actions"><button type="button" class="quiet" id="deselect-run" hidden>取消选择</button><button type="button" class="quiet" id="clear-run" hidden>清除整批任务</button></div>
+        </section>
+      </aside>
+      <section class="workspace" id="workspace" hidden>
+        <div class="workspace-head">
+          <div class="document-title">
+            <h1 id="workspace-name"></h1>
+            <p class="muted" id="source-model"></p>
+            <p class="muted" id="mix-summary" hidden></p>
+          </div>
+          <a id="source-link" target="_blank" rel="noopener" hidden>打开原 PDF ↗</a>
+        </div>
+        <div class="workspace-grid">
+          <section class="proof" id="page-proof" aria-label="版面预览">
+            <div class="pager">
+              <button type="button" class="quiet" id="previous-page" aria-label="上一页">‹</button>
+              <select id="page-number" aria-label="页码"></select>
+              <button type="button" class="quiet" id="next-page" aria-label="下一页">›</button>
+              <button type="button" class="quiet" id="edit-selection" aria-controls="correction-fields" aria-expanded="false">校对侧栏</button>
+            </div>
+            <div class="selection-panel" id="selection-panel" aria-label="校对所选内容" hidden>
+              <div class="selection-bar">
+                <span id="selection-label" class="muted"></span>
+                <div class="selection-actions">
+                  <button type="button" class="quiet" id="mark-stem" aria-pressed="false">题干</button>
+                  <button type="button" class="quiet" id="mark-option" aria-pressed="false">选项</button>
+                  <button type="button" class="quiet" id="clear-selection" aria-label="取消选中">×</button>
+                </div>
+              </div>
+            </div>
+            <aside id="correction-fields" class="correction-sidebar" aria-label="校对侧栏" hidden>
+              <div class="correction-heading"><h2>校对</h2><button type="button" class="quiet" id="close-correction" aria-label="收起校对侧栏">×</button></div>
+              <p id="correction-context" class="muted">点选预览中的文字或公式。</p>
+              <label>元素类型<select id="correction-role" disabled><option value="">自动识别</option></select></label>
+              <label id="correction-alignment-field" hidden>本段重排对齐<select id="correction-alignment" disabled><option value="">自动</option><option value="center">居中</option><option value="left">左对齐</option></select></label>
+              <label class="check"><input type="checkbox" id="correction-group" disabled>应用到同段文字</label>
+              <label>内容<textarea id="correction" rows="5" disabled></textarea></label>
+              <div class="actions"><button type="button" id="save-correction" disabled>保存本处修改</button><button type="button" class="quiet" id="discard-correction" hidden>放弃修改</button></div>
+              <p class="status" id="correction-status" role="status"></p>
+            </aside>
+            <div class="paper-scroll" id="paper-scroll">
+              <div class="preview-message" id="preview-message" hidden>
+                <p id="preview-status" role="status"></p>
+                <button type="button" class="quiet" id="retry-preview" hidden>重试</button>
+              </div>
+              <div id="paper" class="paper" aria-label="识别版面"></div>
+            </div>
+          </section>
+        </div>
+        <p class="status" id="workspace-status" role="status"></p>
+      </section>
+    </div>
+  <dialog class="export-dialog" id="document-settings" aria-labelledby="export-heading">
+    <header class="dialog-head">
+      <h2 id="export-heading">导出与下载</h2>
+      <button type="button" class="quiet" id="close-export">关闭</button>
+    </header>
+    <div class="export-body">
+            <div class="control-group">
+              <label>排版方式<select id="layout-mode"><option value="flow">按模板重排</option><option value="fixed">原位复刻</option></select></label>
+              <label>排版模板<select id="selected-template"></select></label>
+              <button type="button" class="quiet" id="use-default-template" hidden>使用默认模板</button>
+              <p class="muted" id="template-settings-summary"></p>
+              <label id="export-formula-field">本次公式处理
+                <select id="export-formula-mode">
+                  <option value="">沿用模板</option>
+                  <option value="editable">Word 原生公式</option>
+                  <option value="image">公式图片</option>
+                  <option value="latex">保留 LaTeX</option>
+                </select>
+              </label>
+              <label id="question-layout-field" hidden>原位版式
+                <select id="question-layout">
+                  <option value="adaptive-rows">原位自适应 · 自然字形与公式</option>
+                  <option value="page-paragraphs">按页原位 · 无文本框</option>
+                  <option value="merged-options">题干一框 · 选项合框</option>
+                  <option value="separate-options">题干一框 · 每个选项独立</option>
+                  <option value="page-images">跨平台原位 · 原卷逐页图片</option>
+                </select>
+              </label>
+              <p class="muted" id="layout-capability" hidden></p>
+              <button type="button" class="quiet" id="open-pipeline" hidden>打开对应的 Pipeline 结果</button>
+              <div class="actions"><button type="button" id="generate-word">生成 Word</button><button type="button" class="quiet" id="edit-template">编辑模板</button></div>
+              <p class="status" id="export-status" role="status"></p>
+            </div>
+            <div class="control-group">
+              <h2>下载</h2>
+              <div id="source-downloads" class="result-links"></div>
+              <label class="check" id="download-options" hidden><input type="checkbox" id="clear-after-download">下载后清除整批任务</label>
+              <div id="export-list" class="results" aria-label="Word 导出记录"></div>
+            </div>
+    </div>
+  </dialog>
+  <section id="template-workspace" class="template-workspace" aria-labelledby="template-heading" hidden>
+    <form id="template-form" class="editor" novalidate>
+      <header class="dialog-head">
+        <div><h2 id="template-heading">排版模板</h2><p id="template-subtitle" class="muted"></p></div>
+        <div class="dialog-head-actions">
+          <button type="button" class="quiet mobile-preview" data-pane="preview" aria-controls="template-proof-section">预览</button>
+        </div>
+      </header>
+      <div class="editor-body">
+        <aside class="editor-nav" aria-label="模板设置">
+          <label>选择模板<select id="edit-template-id"></select></label>
+          <button type="button" class="quiet" id="new-template">＋ 新建模板</button>
+          <nav class="template-sections" aria-label="设置分类">
+            <button type="button" data-pane="typography" aria-controls="pane-typography">文字样式</button>
+            <button type="button" data-pane="general" aria-controls="pane-general">模板与公式</button>
+            <button type="button" data-pane="paper" aria-controls="pane-paper">纸张与页脚</button>
+            <button type="button" data-pane="files" aria-controls="pane-files">模板文件</button>
+          </nav>
+        </aside>
+        <div class="editor-fields">
+          <section class="editor-pane" id="pane-typography" aria-labelledby="typography-heading">
+            <h3 id="typography-heading">文字样式</h3>
+            <div class="style-role">
+              <label>元素<select id="style-element"></select></label>
+              <p class="muted" id="heading-level-status"></p>
+              <label class="check template-heading-options"><input type="checkbox" id="show-all-headings"> 全部标题级别</label>
+            </div>
+            <label class="check" id="inherit-body-field" hidden><input type="checkbox" id="inherit-body" checked>未设置的属性继承正文</label>
+            <div class="fields style-fields">
+              <div class="font-field"><label for="element-font">字体</label><div class="font-control"><input id="element-font" data-style="font" list="font-options" autocomplete="off" maxlength="64"><button type="button" class="quiet font-picker" data-font-target="element-font" aria-label="选择元素字体">选择</button></div><small data-inherits="font"></small></div>
+              <label>字号（pt）<input data-style="fontSizePt" type="number" min="4" max="72" step="0.1"><small data-inherits="fontSizePt"></small></label>
+              <div class="font-field"><label for="element-color">颜色</label><div class="color-control"><input id="element-color" data-style="color" maxlength="7" pattern="#[0-9A-Fa-f]{6}" spellcheck="false"><input type="color" id="style-color-picker" aria-label="选择颜色"></div><small data-inherits="color"></small></div>
+              <label>字间距（pt）<input data-style="letterSpacingPt" type="number" min="-2" max="8" step="0.1"><small data-inherits="letterSpacingPt"></small></label>
+              <label>粗体<select data-style="bold"><option value="">继承</option><option value="true">加粗</option><option value="false">常规</option></select></label>
+              <label>下划线<select data-style="underline"><option value="">继承</option><option value="true">开启</option><option value="false">关闭</option></select></label>
+              <label>行距（倍）<input data-style="lineSpacing" type="number" min="0.8" max="4" step="0.05"><small data-inherits="lineSpacing"></small></label>
+              <label>最小行高（pt，优先于倍数行距）<input data-style="lineSpacingPt" type="number" min="1" max="200" step="0.5"><small data-inherits="lineSpacingPt"></small></label>
+              <label>段前（pt）<input data-style="spaceBeforePt" type="number" min="0" max="120" step="0.5"><small data-inherits="spaceBeforePt"></small></label>
+              <label>段后（pt）<input data-style="spaceAfterPt" type="number" min="0" max="120" step="0.5"><small data-inherits="spaceAfterPt"></small></label>
+              <label>左缩进（mm）<input data-style="leftIndentMm" type="number" min="0" max="100" step="0.1"><small data-inherits="leftIndentMm"></small></label>
+              <label>右缩进（mm）<input data-style="rightIndentMm" type="number" min="0" max="100" step="0.1"><small data-inherits="rightIndentMm"></small></label>
+              <label>首行缩进（mm，负值为悬挂）<input data-style="firstLineIndentMm" type="number" min="-60" max="60" step="0.1"><small data-inherits="firstLineIndentMm"></small></label>
+              <label>对齐方式<select data-style="alignment"><option value="">继承</option><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option><option value="justify">两端对齐</option></select><small data-inherits="alignment"></small></label>
+            </div>
+            <p class="muted" id="style-context"></p>
+            <button type="button" class="quiet" id="reset-element-style">恢复此元素的继承样式</button>
+          </section>
+          <section class="editor-pane" id="pane-general" aria-labelledby="general-heading" hidden>
+            <h3 id="general-heading">模板与公式</h3>
+            <label>模板名称<input name="name" required maxlength="60"></label>
+            <label>版式<select name="mode"><option value="flow">普通段落</option><option value="fixed">原位文本框</option></select></label>
+            <div class="font-field"><label for="template-font">默认字体</label><div class="font-control"><input id="template-font" name="font" list="font-options" autocomplete="off" required maxlength="64"><button type="button" class="quiet font-picker" data-font-target="template-font" aria-label="选择默认字体">选择</button></div></div>
+            <label>公式<select name="formulaMode"><option value="editable">Word 原生公式</option><option value="image">适配为图片</option><option value="latex">保留 LaTeX 源码</option></select></label>
+            <label>题号和选项标点<select name="markerWidth"><option value="preserve">保留原样</option><option value="full">全角</option><option value="half">半角</option></select></label>
+          </section>
+          <section class="editor-pane" id="pane-paper" aria-labelledby="paper-heading" hidden>
+            <h3 id="paper-heading">纸张与页脚</h3>
+            <label>页面大小<select id="paper-size"><option value="custom">自定义尺寸</option><option value="16k">16 开竖版（185 × 260 mm）</option><option value="a4">A4 竖版（210 × 297 mm）</option></select></label>
+            <div class="fields">
+              <label>宽度（mm）<input name="widthMm" type="number" min="40" max="558" step="0.1" placeholder="210"></label>
+              <label>高度（mm）<input name="heightMm" type="number" min="40" max="558" step="0.1" placeholder="随原页比例"></label>
+            </div>
+            <fieldset>
+              <legend>页边距（mm）</legend>
+              <div class="fields">
+                <label>上<input name="top" type="number" min="0" max="250" step="0.1" placeholder="0"></label>
+                <label>右<input name="right" type="number" min="0" max="250" step="0.1" placeholder="0"></label>
+                <label>下<input name="bottom" type="number" min="0" max="250" step="0.1" placeholder="0"></label>
+                <label>左<input name="left" type="number" min="0" max="250" step="0.1" placeholder="0"></label>
+              </div>
+            </fieldset>
+            <p class="muted">清空宽度或页边距会恢复打开模板时的数值。清空高度会按原页比例计算。</p>
+            <p class="muted" id="paper-content-width"></p>
+            <label class="check"><input type="checkbox" id="auto-footer"> 自动识别原卷页脚</label>
+            <label id="custom-footer-field">自定义页脚<input name="footer" maxlength="200" placeholder="第 {page} 页 / 共 {pages} 页"></label>
+            <label>页脚下边距（mm）<input name="footerDistanceMm" type="number" min="0" max="100" step="0.1" placeholder="5"></label>
+            <p class="muted">页码 {page} · 总页数 {pages} · 文件名 {file}</p>
+            <label class="check"><input type="checkbox" name="showPageMarks"> 保留识别到的页眉页脚</label>
+          </section>
+          <section class="editor-pane" id="pane-files" aria-labelledby="files-heading" hidden>
+            <h3 id="files-heading">模板文件</h3>
+            <p class="muted">导入的 JSON 会保存为新模板。</p>
+            <div class="actions">
+              <a id="download-template" download>下载模板 JSON</a>
+              <button type="button" class="quiet" id="import-template">导入模板 JSON</button>
+              <input type="file" id="template-file" accept=".json,application/json" hidden>
+            </div>
+          </section>
+        </div>
+        <section id="template-proof-section" class="template-proof" aria-labelledby="template-proof-heading">
+          <header class="template-proof-head"><h3 id="template-proof-heading">预览</h3><p class="muted" id="template-proof-caption"></p></header>
+          <div id="template-proof" class="template-proof-canvas"></div>
+        </section>
+      </div>
+      <footer class="dialog-actions">
+        <button type="button" class="quiet" id="delete-template" hidden>删除模板</button>
+        <p id="template-status" class="status" role="status"></p>
+        <button type="submit" class="quiet" id="copy-template" value="copy">另存新模板</button>
+        <button type="submit" id="save-template" value="save">保存修改</button>
+      </footer>
+      <datalist id="font-options">
+        <option value="SimSun" label="宋体"></option><option value="SimHei" label="黑体"></option>
+        <option value="KaiTi" label="楷体"></option><option value="FangSong" label="仿宋"></option>
+        <option value="Microsoft YaHei" label="微软雅黑"></option><option value="DengXian" label="等线"></option>
+        <option value="Noto Sans CJK SC" label="思源黑体"></option><option value="Noto Serif CJK SC" label="思源宋体"></option>
+        <option value="Arial"></option><option value="Aptos"></option><option value="Calibri"></option>
+        <option value="Times New Roman"></option><option value="Cambria"></option><option value="Cambria Math"></option>
+      </datalist>
+    </form>
+    <div id="font-menu" class="font-menu" popover="auto" aria-label="常用字体"></div>
+  </section>
+  </main>
+</body>
+</html>
